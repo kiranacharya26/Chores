@@ -1,7 +1,7 @@
 import json
 import os
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask import Flask, render_template, request, jsonify
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -45,11 +45,14 @@ FREQUENCIES = bq_store.FREQUENCIES
 WEEKDAYS = bq_store.WEEKDAYS
 
 
-def send_push(endpoint, subscription_json, title, body):
+def send_push(endpoint, subscription_json, title, body, data=None):
+    payload = {"title": title, "body": body}
+    if data:
+        payload.update(data)
     try:
         webpush(
             subscription_info=json.loads(subscription_json),
-            data=json.dumps({"title": title, "body": body}),
+            data=json.dumps(payload),
             vapid_private_key=VAPID_PRIVATE_KEY,
             vapid_claims=dict(VAPID_CLAIMS),
         )
@@ -68,12 +71,23 @@ def check_and_send_reminders():
     for chore in chores:
         if not chore["due_today"] or chore["done_today"]:
             continue
-        if chore["reminder_time"] != current_hm:
-            continue
-        if bq_store.already_reminded_today(chore["id"]):
-            continue
+
+        state = bq_store.reminder_state(chore["id"])
+        if state is None:
+            if chore["reminder_time"] != current_hm:
+                continue
+        else:
+            if state["snoozed_until"] is None:
+                continue  # already reminded today, not snoozed — wait for tomorrow
+            if datetime.now(timezone.utc) < state["snoozed_until"]:
+                continue  # still snoozed
+
         for sub in subs:
-            send_push(sub["endpoint"], sub["subscription_json"], "Chore reminder", f"Time to do: {chore['name']}")
+            send_push(
+                sub["endpoint"], sub["subscription_json"],
+                "Chore reminder", f"Time to do: {chore['name']}",
+                data={"chore_id": chore["id"]},
+            )
         bq_store.mark_reminded(chore["id"])
 
 
@@ -140,6 +154,14 @@ def mark_done(chore_id):
 @app.route("/api/chores/<chore_id>/undone", methods=["POST"])
 def mark_undone(chore_id):
     bq_store.mark_done(chore_id, on=False)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/chores/<chore_id>/snooze", methods=["POST"])
+def snooze_chore(chore_id):
+    data = request.get_json(silent=True) or {}
+    minutes = int(data.get("minutes", 60))
+    bq_store.snooze_chore(chore_id, minutes)
     return jsonify({"ok": True})
 
 

@@ -209,18 +209,37 @@ def heatmap(days=84):
     return result
 
 
-def already_reminded_today(chore_id):
+def reminder_state(chore_id):
+    """Latest reminder event for this chore today, if any.
+
+    Returns None if no reminder sent yet today. Otherwise a dict with
+    'snoozed_until' (datetime or None) — if snoozed_until is in the past,
+    the reminder should fire again.
+    """
     today_iso = date.today().isoformat()
     query = f"""
-        SELECT 1 FROM `{_table('reminder_events')}`
+        SELECT snoozed_until FROM `{_table('reminder_events')}`
         WHERE chore_id = @chore_id AND reminded_date = @today
+        ORDER BY created_at DESC
         LIMIT 1
     """
     job_config = bigquery.QueryJobConfig(query_parameters=[
         bigquery.ScalarQueryParameter("chore_id", "STRING", chore_id),
         bigquery.ScalarQueryParameter("today", "STRING", today_iso),
     ])
-    return _get_client().query(query, job_config=job_config).result().total_rows > 0
+    rows = list(_get_client().query(query, job_config=job_config).result())
+    if not rows:
+        return None
+    return {"snoozed_until": rows[0]["snoozed_until"]}
+
+
+def should_send_reminder(chore_id):
+    state = reminder_state(chore_id)
+    if state is None:
+        return True
+    if state["snoozed_until"] is not None and datetime.now(timezone.utc) >= state["snoozed_until"]:
+        return True
+    return False
 
 
 def mark_reminded(chore_id):
@@ -228,6 +247,18 @@ def mark_reminded(chore_id):
         "id": uuid.uuid4().hex,
         "chore_id": chore_id,
         "reminded_date": date.today().isoformat(),
+        "snoozed_until": None,
+        "created_at": _now_iso(),
+    }])
+
+
+def snooze_chore(chore_id, minutes):
+    snoozed_until = datetime.now(timezone.utc) + timedelta(minutes=minutes)
+    _append_rows("reminder_events", [{
+        "id": uuid.uuid4().hex,
+        "chore_id": chore_id,
+        "reminded_date": date.today().isoformat(),
+        "snoozed_until": snoozed_until.isoformat(),
         "created_at": _now_iso(),
     }])
 

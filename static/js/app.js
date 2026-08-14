@@ -62,6 +62,15 @@ async function toggleDone(chore) {
   loadHeatmap();
 }
 
+function isOverdue(chore) {
+  if (chore.done_today || !chore.due_today) return false;
+  const [h, m] = chore.reminder_time.split(":").map(Number);
+  const reminderMinutes = h * 60 + m;
+  const now = new Date();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  return nowMinutes > reminderMinutes;
+}
+
 function buildChoreRow(chore) {
   const wrap = document.createElement("li");
   wrap.className = "chore-wrap";
@@ -70,8 +79,9 @@ function buildChoreRow(chore) {
   swipeBg.className = "swipe-bg";
   swipeBg.textContent = chore.done_today ? "Undo" : "Done ✓";
 
+  const overdue = isOverdue(chore);
   const li = document.createElement("li");
-  li.className = "chore" + (chore.done_today ? " done" : "");
+  li.className = "chore" + (chore.done_today ? " done" : "") + (overdue ? " overdue" : "");
 
   const check = document.createElement("button");
   check.className = "check" + (chore.done_today ? " checked" : "");
@@ -89,7 +99,8 @@ function buildChoreRow(chore) {
       ? `Weekly · ${WEEKDAY_NAMES[chore.weekday]}`
       : `Monthly · day ${chore.day_of_month}`;
   const streakHtml = chore.streak > 0 ? `<span class="streak-badge">🔥${chore.streak}</span>` : "";
-  info.innerHTML = `<span class="name">${chore.name}</span><span class="meta">${metaText} · ${chore.reminder_time} ${streakHtml}</span>`;
+  const overdueHtml = overdue ? `<span class="overdue-badge">Overdue</span>` : "";
+  info.innerHTML = `<span class="name">${chore.name}</span><span class="meta">${metaText} · ${chore.reminder_time} ${streakHtml} ${overdueHtml}</span>`;
 
   const delBtn = document.createElement("button");
   delBtn.className = "icon-btn";

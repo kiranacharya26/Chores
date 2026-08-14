@@ -193,6 +193,16 @@ li.chore.pulse { animation: pulse 0.35s ease; }
   color: #f59e0b;
   font-weight: 600;
 }
+.overdue-badge {
+  color: var(--danger);
+  font-weight: 600;
+  background: rgba(239, 68, 68, 0.12);
+  padding: 1px 6px;
+  border-radius: 6px;
+}
+li.chore.overdue {
+  border-color: rgba(239, 68, 68, 0.4);
+}
 
 .icon-btn {
   background: none;
