@@ -22,7 +22,16 @@ from google.cloud import bigquery
 PROJECT_ID = "chores-app-kiran"
 DATASET = "chores_app"
 
-_client = bigquery.Client(project=PROJECT_ID)
+_client = None
+
+
+def _get_client():
+    """Lazy singleton so credentials set by app.py at startup are picked up,
+    regardless of import order."""
+    global _client
+    if _client is None:
+        _client = bigquery.Client(project=PROJECT_ID)
+    return _client
 
 
 def _table(name):
@@ -37,7 +46,7 @@ def _append_rows(table_name, rows):
         write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
         autodetect=False,
     )
-    job = _client.load_table_from_file(buf, _table(table_name), job_config=job_config)
+    job = _get_client().load_table_from_file(buf, _table(table_name), job_config=job_config)
     job.result()
 
 
@@ -100,7 +109,7 @@ def _latest_chores():
         WHERE rn = 1 AND event_type != 'delete'
         ORDER BY created_at ASC
     """
-    return [dict(row) for row in _client.query(query).result()]
+    return [dict(row) for row in _get_client().query(query).result()]
 
 
 def _done_dates_by_chore():
@@ -117,7 +126,7 @@ def _done_dates_by_chore():
         WHERE rn = 1 AND event_type = 'done'
     """
     result = {}
-    for row in _client.query(query).result():
+    for row in _get_client().query(query).result():
         result.setdefault(row["chore_id"], set()).add(row["event_date"])
     return result
 
@@ -211,7 +220,7 @@ def already_reminded_today(chore_id):
         bigquery.ScalarQueryParameter("chore_id", "STRING", chore_id),
         bigquery.ScalarQueryParameter("today", "STRING", today_iso),
     ])
-    return _client.query(query, job_config=job_config).result().total_rows > 0
+    return _get_client().query(query, job_config=job_config).result().total_rows > 0
 
 
 def mark_reminded(chore_id):
@@ -233,7 +242,7 @@ def _active_subscriptions():
         FROM ranked
         WHERE rn = 1 AND event_type = 'active'
     """
-    return [dict(row) for row in _client.query(query).result()]
+    return [dict(row) for row in _get_client().query(query).result()]
 
 
 def list_active_subscriptions():
