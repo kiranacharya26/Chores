@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Chores</title>
+<meta name="theme-color" content="#0b0f19">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Chores">
+<link rel="manifest" href="/static/manifest.json">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<link rel="icon" href="/static/icons/icon-192.png">
+<link rel="stylesheet" href="/static/css/app.css?v={{ asset_version }}">
+</head>
+<body>
+
+<header class="topbar">
+  <h1>Chores</h1>
+  <span class="date" id="todayLabel"></span>
+</header>
+
+<div id="pushBanner" class="banner" style="display:none;">
+  <div class="banner-text">
+    <strong>Turn on notifications</strong>
+    <span>So chores actually remind you</span>
+  </div>
+  <button id="enablePush" class="btn-pill">Enable</button>
+</div>
+
+<main id="content">
+  <div class="heatmap-card">
+    <div class="heatmap-header">
+      <span>Activity</span>
+      <span id="heatmapTotal" class="heatmap-total"></span>
+    </div>
+    <div id="heatmap" class="heatmap-grid"></div>
+  </div>
+
+  <div id="emptyState" class="empty-state" style="display:none;">
+    <div class="empty-emoji">✨</div>
+    <p>No chores yet.<br>Tap + to add your first one.</p>
+  </div>
+  <div id="groups"></div>
+</main>
+
+<button id="fab" class="fab" aria-label="Add chore">+</button>
+
+<div id="sheetOverlay" class="sheet-overlay">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <h2>New chore</h2>
+    <form id="choreForm">
+      <input type="text" id="name" placeholder="What needs doing?" required autocomplete="off">
+
+      <div class="segmented" id="freqSegmented">
+        <button type="button" class="seg-btn active" data-val="daily">Daily</button>
+        <button type="button" class="seg-btn" data-val="weekly">Weekly</button>
+        <button type="button" class="seg-btn" data-val="monthly">Monthly</button>
+      </div>
+      <input type="hidden" id="frequency" value="daily">
+
+      <select id="weekday" class="field" style="display:none;">
+        {% for wd in weekdays %}<option value="{{ loop.index0 }}">{{ wd }}</option>{% endfor %}
+      </select>
+      <input type="number" id="dayOfMonth" class="field" min="1" max="31" placeholder="Day of month (1-31)" style="display:none;">
+
+      <label class="field-label">Reminder time</label>
+      <input type="time" id="reminderTime" class="field" value="09:00">
+
+      <div class="sheet-actions">
+        <button type="button" id="cancelSheet" class="btn-secondary">Cancel</button>
+        <button type="submit" class="btn-primary">Add chore</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/static/js/app.js?v={{ asset_version }}" data-vapid-key="{{ vapid_public_key }}"></script>
+</body>
+</html>

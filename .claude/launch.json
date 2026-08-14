@@ -1,0 +1,10 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "chore-app",
+      "url": "http://localhost:5099",
+      "port": 5099
+    }
+  ]
+}

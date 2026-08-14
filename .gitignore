@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# local sqlite db
+*.db
+
+# secrets — set these as env vars on Render instead
+vapid_private.pem
+vapid_public_key.txt

@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: chore-app
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 1 --threads 4 --bind 0.0.0.0:$PORT
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_PATH
+        value: /var/data/chores.db
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_CONTACT_EMAIL
+        value: mailto:kiran@nourishednaturalhealth.com
+      - key: FLASK_DEBUG
+        value: "0"
+    disk:
+      name: chore-data
+      mountPath: /var/data
+      sizeGB: 1
