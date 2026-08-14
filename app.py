@@ -165,9 +165,9 @@ def snooze_chore(chore_id):
     return jsonify({"ok": True})
 
 
-@app.route("/api/heatmap", methods=["GET"])
-def heatmap():
-    return jsonify(bq_store.heatmap())
+@app.route("/api/week", methods=["GET"])
+def week():
+    return jsonify(bq_store.week_progress())
 
 
 @app.route("/api/subscribe", methods=["POST"])

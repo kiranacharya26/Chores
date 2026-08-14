@@ -193,19 +193,29 @@ def mark_done(chore_id, on: bool):
     }])
 
 
-def heatmap(days=84):
-    start = date.today() - timedelta(days=days - 1)
+def week_progress():
+    """Last 7 days (ending today): how many due chores were done each day."""
+    chores = _latest_chores()
     done_map = _done_dates_by_chore()
-    counts = {}
-    for dates in done_map.values():
-        for d in dates:
-            if d >= start.isoformat():
-                counts[d] = counts.get(d, 0) + 1
+    today = date.today()
+    start = today - timedelta(days=6)
 
     result = []
-    for i in range(days):
+    for i in range(7):
         d = start + timedelta(days=i)
-        result.append({"date": d.isoformat(), "count": counts.get(d.isoformat(), 0)})
+        total = 0
+        done = 0
+        for c in chores:
+            if _is_due_today(c, d):
+                total += 1
+                if d.isoformat() in done_map.get(c["chore_id"], set()):
+                    done += 1
+        result.append({
+            "date": d.isoformat(),
+            "weekday": d.weekday(),
+            "done": done,
+            "total": total,
+        })
     return result
 
 

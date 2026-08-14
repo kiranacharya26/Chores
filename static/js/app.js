@@ -7,8 +7,9 @@ const emptyState = document.getElementById("emptyState");
 const pushBanner = document.getElementById("pushBanner");
 const enablePushBtn = document.getElementById("enablePush");
 const todayLabel = document.getElementById("todayLabel");
-const heatmapEl = document.getElementById("heatmap");
-const heatmapTotalEl = document.getElementById("heatmapTotal");
+const todayStat = document.getElementById("todayStat");
+const weekBarsEl = document.getElementById("weekBars");
+const weekTotalEl = document.getElementById("weekTotal");
 
 const fab = document.getElementById("fab");
 const sheetOverlay = document.getElementById("sheetOverlay");
@@ -19,7 +20,18 @@ const frequencyInput = document.getElementById("frequency");
 const weekdaySelect = document.getElementById("weekday");
 const dayOfMonthInput = document.getElementById("dayOfMonth");
 
+const timeTrigger = document.getElementById("timeTrigger");
+const timeTriggerLabel = document.getElementById("timeTriggerLabel");
+const reminderTimeInput = document.getElementById("reminderTime");
+const timeSheetOverlay = document.getElementById("timeSheetOverlay");
+const cancelTimeSheet = document.getElementById("cancelTimeSheet");
+const confirmTimeSheet = document.getElementById("confirmTimeSheet");
+const hourWheel = document.getElementById("hourWheel");
+const minuteWheel = document.getElementById("minuteWheel");
+const ampmWheel = document.getElementById("ampmWheel");
+
 const WEEKDAY_NAMES = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const WEEKDAY_SHORT = ["M","T","W","T","F","S","S"];
 const TIME_GROUPS = [
   { key: "morning", label: "Morning", test: (h) => h < 12 },
   { key: "afternoon", label: "Afternoon", test: (h) => h >= 12 && h < 17 },
@@ -35,6 +47,7 @@ function closeSheet() {
   sheetOverlay.classList.remove("open");
   choreForm.reset();
   setFrequency("daily");
+  setReminderTime("09:00");
 }
 fab.addEventListener("click", openSheet);
 cancelSheet.addEventListener("click", closeSheet);
@@ -55,11 +68,120 @@ freqSegmented.addEventListener("click", (e) => {
   if (btn) setFrequency(btn.dataset.val);
 });
 
+// ---------- Time wheel picker ----------
+
+function setReminderTime(hhmm) {
+  reminderTimeInput.value = hhmm;
+  const [h24, m] = hhmm.split(":").map(Number);
+  const period = h24 >= 12 ? "PM" : "AM";
+  const h12 = ((h24 + 11) % 12) + 1;
+  timeTriggerLabel.textContent = `${h12}:${String(m).padStart(2, "0")} ${period}`;
+}
+
+const HOURS = Array.from({ length: 12 }, (_, i) => i + 1); // 1..12
+const MINUTES = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,...,55
+const PERIODS = ["AM", "PM"];
+const ITEM_HEIGHT = 44;
+
+function buildWheel(el, items, formatter) {
+  el.innerHTML = "";
+  const padTop = document.createElement("div");
+  padTop.className = "wheel-pad";
+  el.appendChild(padTop);
+  items.forEach((val) => {
+    const item = document.createElement("div");
+    item.className = "wheel-item";
+    item.textContent = formatter(val);
+    item.dataset.val = val;
+    el.appendChild(item);
+  });
+  const padBottom = document.createElement("div");
+  padBottom.className = "wheel-pad";
+  el.appendChild(padBottom);
+}
+
+function wheelSelectedIndex(el) {
+  return Math.round(el.scrollTop / ITEM_HEIGHT);
+}
+
+function scrollWheelTo(el, index, smooth) {
+  if (smooth) {
+    el.scrollTo({ top: index * ITEM_HEIGHT, behavior: "smooth" });
+  } else {
+    el.scrollTop = index * ITEM_HEIGHT;
+  }
+}
+
+function highlightWheel(el) {
+  const idx = wheelSelectedIndex(el);
+  [...el.querySelectorAll(".wheel-item")].forEach((item, i) => {
+    item.classList.toggle("selected", i === idx);
+  });
+  return idx;
+}
+
+function setupWheel(el) {
+  let debounceTimer = null;
+  el.addEventListener("scroll", () => {
+    highlightWheel(el);
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      const idx = wheelSelectedIndex(el);
+      scrollWheelTo(el, idx, true);
+      highlightWheel(el);
+    }, 120);
+  });
+}
+
+buildWheel(hourWheel, HOURS, (v) => v);
+buildWheel(minuteWheel, MINUTES, (v) => String(v).padStart(2, "0"));
+buildWheel(ampmWheel, PERIODS, (v) => v);
+setupWheel(hourWheel);
+setupWheel(minuteWheel);
+setupWheel(ampmWheel);
+
+function openTimeSheet() {
+  const [h24, m] = reminderTimeInput.value.split(":").map(Number);
+  const period = h24 >= 12 ? "PM" : "AM";
+  const h12 = ((h24 + 11) % 12) + 1;
+  const minuteIdx = Math.round(m / 5) % 12;
+
+  timeSheetOverlay.classList.add("open");
+  // set scroll positions without animation once the sheet is visible
+  requestAnimationFrame(() => {
+    scrollWheelTo(hourWheel, HOURS.indexOf(h12), false);
+    scrollWheelTo(minuteWheel, minuteIdx, false);
+    scrollWheelTo(ampmWheel, PERIODS.indexOf(period), false);
+    highlightWheel(hourWheel);
+    highlightWheel(minuteWheel);
+    highlightWheel(ampmWheel);
+  });
+}
+function closeTimeSheet() {
+  timeSheetOverlay.classList.remove("open");
+}
+timeTrigger.addEventListener("click", openTimeSheet);
+cancelTimeSheet.addEventListener("click", closeTimeSheet);
+timeSheetOverlay.addEventListener("click", (e) => {
+  if (e.target === timeSheetOverlay) closeTimeSheet();
+});
+confirmTimeSheet.addEventListener("click", () => {
+  const h12 = HOURS[wheelSelectedIndex(hourWheel)];
+  const m = MINUTES[wheelSelectedIndex(minuteWheel)];
+  const period = PERIODS[wheelSelectedIndex(ampmWheel)];
+  let h24 = h12 % 12;
+  if (period === "PM") h24 += 12;
+  setReminderTime(`${String(h24).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+  closeTimeSheet();
+});
+
+// ---------- Chore list ----------
+
 async function toggleDone(chore) {
   const action = chore.done_today ? "undone" : "done";
   await fetch(`/api/chores/${chore.id}/${action}`, { method: "POST" });
   loadChores();
-  loadHeatmap();
+  loadWeek();
 }
 
 function isOverdue(chore) {
@@ -108,7 +230,7 @@ function buildChoreRow(chore) {
   delBtn.addEventListener("click", async () => {
     await fetch(`/api/chores/${chore.id}`, { method: "DELETE" });
     loadChores();
-    loadHeatmap();
+    loadWeek();
   });
 
   li.appendChild(check);
@@ -163,6 +285,10 @@ async function loadChores() {
   groupsEl.innerHTML = "";
   emptyState.style.display = chores.length === 0 ? "" : "none";
 
+  const dueToday = chores.filter((c) => c.due_today);
+  const doneToday = dueToday.filter((c) => c.done_today);
+  todayStat.textContent = dueToday.length ? `${doneToday.length}/${dueToday.length} today` : "";
+
   const grouped = { morning: [], afternoon: [], evening: [] };
   for (const chore of chores) {
     const hour = parseInt((chore.reminder_time || "09:00").split(":")[0], 10);
@@ -186,34 +312,49 @@ async function loadChores() {
   }
 }
 
-async function loadHeatmap() {
-  const res = await fetch("/api/heatmap");
+async function loadWeek() {
+  const res = await fetch("/api/week");
   const days = await res.json();
-  heatmapEl.innerHTML = "";
+  weekBarsEl.innerHTML = "";
   const todayIso = new Date().toISOString().slice(0, 10);
-  let total = 0;
-  const max = Math.max(1, ...days.map((d) => d.count));
 
+  let totalDone = 0, totalDue = 0;
   for (const day of days) {
-    total += day.count;
-    const cell = document.createElement("div");
-    cell.className = "heatmap-cell" + (day.date === todayIso ? " today" : "");
-    if (day.count > 0) {
-      const intensity = day.count / max;
-      const alpha = 0.25 + intensity * 0.75;
-      cell.style.background = `rgba(59, 130, 246, ${alpha.toFixed(2)})`;
-    }
-    cell.title = `${day.date}: ${day.count} done`;
-    heatmapEl.appendChild(cell);
+    totalDone += day.done;
+    totalDue += day.total;
+
+    const col = document.createElement("div");
+    col.className = "week-day" + (day.date === todayIso ? " is-today" : "");
+
+    const track = document.createElement("div");
+    track.className = "week-bar-track";
+    const fill = document.createElement("div");
+    const ratio = day.total > 0 ? day.done / day.total : 0;
+    fill.className = "week-bar-fill" + (day.total > 0 && day.done === day.total ? " full" : "") + (day.total === 0 ? " empty" : "");
+    fill.style.height = day.total > 0 ? `${Math.max(ratio * 100, 6)}%` : "3px";
+    track.appendChild(fill);
+
+    const label = document.createElement("div");
+    label.className = "week-day-label";
+    label.textContent = WEEKDAY_SHORT[day.weekday];
+
+    const count = document.createElement("div");
+    count.className = "week-day-count";
+    count.textContent = day.total > 0 ? `${day.done}/${day.total}` : "–";
+
+    col.appendChild(track);
+    col.appendChild(label);
+    col.appendChild(count);
+    weekBarsEl.appendChild(col);
   }
-  heatmapTotalEl.textContent = `${total} done in 12 weeks`;
+  weekTotalEl.textContent = totalDue > 0 ? `${totalDone}/${totalDue} this week` : "";
 }
 
 choreForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const name = document.getElementById("name").value.trim();
   const frequency = frequencyInput.value;
-  const reminder_time = document.getElementById("reminderTime").value || "09:00";
+  const reminder_time = reminderTimeInput.value || "09:00";
   const payload = { name, frequency, reminder_time };
   if (frequency === "weekly") payload.weekday = parseInt(weekdaySelect.value, 10);
   if (frequency === "monthly") payload.day_of_month = parseInt(dayOfMonthInput.value, 10) || 1;
@@ -226,7 +367,7 @@ choreForm.addEventListener("submit", async (e) => {
   if (res.ok) {
     closeSheet();
     loadChores();
-    loadHeatmap();
+    loadWeek();
   }
 });
 
@@ -262,6 +403,7 @@ async function setupPush() {
   });
 }
 
+setReminderTime("09:00");
 loadChores();
-loadHeatmap();
+loadWeek();
 setupPush();

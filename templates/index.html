@@ -2,9 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
 <title>Chores</title>
-<meta name="theme-color" content="#0b0f19">
+<meta name="theme-color" content="#08090d">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -17,11 +17,15 @@
 <body>
 
 <header class="topbar">
-  <h1>Chores</h1>
-  <span class="date" id="todayLabel"></span>
+  <div>
+    <h1>Chores</h1>
+    <span class="date" id="todayLabel"></span>
+  </div>
+  <div class="topbar-stat" id="todayStat"></div>
 </header>
 
 <div id="pushBanner" class="banner" style="display:none;">
+  <div class="banner-icon">🔔</div>
   <div class="banner-text">
     <strong>Turn on notifications</strong>
     <span>So chores actually remind you</span>
@@ -30,12 +34,12 @@
 </div>
 
 <main id="content">
-  <div class="heatmap-card">
-    <div class="heatmap-header">
-      <span>Activity</span>
-      <span id="heatmapTotal" class="heatmap-total"></span>
+  <div class="week-card">
+    <div class="week-header">
+      <span>This week</span>
+      <span id="weekTotal" class="week-total"></span>
     </div>
-    <div id="heatmap" class="heatmap-grid"></div>
+    <div id="weekBars" class="week-bars"></div>
   </div>
 
   <div id="emptyState" class="empty-state" style="display:none;">
@@ -52,7 +56,7 @@
     <div class="sheet-handle"></div>
     <h2>New chore</h2>
     <form id="choreForm">
-      <input type="text" id="name" placeholder="What needs doing?" required autocomplete="off">
+      <input type="text" id="name" class="field name-field" placeholder="What needs doing?" required autocomplete="off">
 
       <div class="segmented" id="freqSegmented">
         <button type="button" class="seg-btn active" data-val="daily">Daily</button>
@@ -67,13 +71,35 @@
       <input type="number" id="dayOfMonth" class="field" min="1" max="31" placeholder="Day of month (1-31)" style="display:none;">
 
       <label class="field-label">Reminder time</label>
-      <input type="time" id="reminderTime" class="field" value="09:00">
+      <button type="button" id="timeTrigger" class="field time-trigger">
+        <span id="timeTriggerLabel">9:00 AM</span>
+        <span class="chevron">⌵</span>
+      </button>
+      <input type="hidden" id="reminderTime" value="09:00">
 
       <div class="sheet-actions">
         <button type="button" id="cancelSheet" class="btn-secondary">Cancel</button>
         <button type="submit" class="btn-primary">Add chore</button>
       </div>
     </form>
+  </div>
+</div>
+
+<div id="timeSheetOverlay" class="sheet-overlay">
+  <div class="sheet time-sheet">
+    <div class="sheet-handle"></div>
+    <h2>Reminder time</h2>
+    <div class="wheel-picker">
+      <div class="wheel-highlight"></div>
+      <div class="wheel" id="hourWheel"></div>
+      <div class="wheel-colon">:</div>
+      <div class="wheel" id="minuteWheel"></div>
+      <div class="wheel wheel-ampm" id="ampmWheel"></div>
+    </div>
+    <div class="sheet-actions">
+      <button type="button" id="cancelTimeSheet" class="btn-secondary">Cancel</button>
+      <button type="button" id="confirmTimeSheet" class="btn-primary">Set time</button>
+    </div>
   </div>
 </div>
 
