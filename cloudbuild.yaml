@@ -8,3 +8,5 @@ steps:
     args: ['run', 'deploy', 'chores-app', '--image', 'us-central1-docker.pkg.dev/chores-app-kiran/cloud-run-source-deploy/chores-app', '--region', 'us-central1', '--platform', 'managed']
 images:
   - 'us-central1-docker.pkg.dev/chores-app-kiran/cloud-run-source-deploy/chores-app'
+options:
+  logging: CLOUD_LOGGING_ONLY
