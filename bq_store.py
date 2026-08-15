@@ -37,7 +37,7 @@ TABLE_SCHEMAS = {
         "id": "STRING", "chore_id": "STRING", "event_type": "STRING",
         "name": "STRING", "frequency": "STRING", "weekday": "INT64",
         "day_of_month": "INT64", "interval_days": "INT64",
-        "reminder_time": "STRING", "created_at": "TIMESTAMP",
+        "reminder_time": "STRING", "assigned_to": "STRING", "created_at": "TIMESTAMP",
     },
     "completion_events": {
         "id": "STRING", "chore_id": "STRING", "event_type": "STRING",
@@ -165,7 +165,7 @@ def _latest_chores():
           SELECT *, ROW_NUMBER() OVER (PARTITION BY chore_id ORDER BY created_at DESC) rn
           FROM `{_table('chore_events')}`
         )
-        SELECT chore_id, name, frequency, weekday, day_of_month, interval_days, reminder_time
+        SELECT chore_id, name, frequency, weekday, day_of_month, interval_days, reminder_time, assigned_to
         FROM ranked
         WHERE rn = 1 AND event_type != 'delete'
         ORDER BY created_at ASC
@@ -209,6 +209,7 @@ def list_chores():
             "weekday": c["weekday"],
             "day_of_month": c["day_of_month"],
             "interval_days": c["interval_days"],
+            "assigned_to": c["assigned_to"] or "unassigned",
             "reminder_time": c["reminder_time"],
             "done_today": today.isoformat() in done_dates,
             "done_by": done_by_date.get(today.isoformat()),
@@ -218,7 +219,8 @@ def list_chores():
     return out
 
 
-def create_chore(name, frequency, weekday=None, day_of_month=None, interval_days=None, reminder_time="09:00"):
+def create_chore(name, frequency, weekday=None, day_of_month=None, interval_days=None,
+                  reminder_time="09:00", assigned_to="unassigned"):
     chore_id = uuid.uuid4().hex
     _append_rows("chore_events", [{
         "id": uuid.uuid4().hex,
@@ -230,6 +232,7 @@ def create_chore(name, frequency, weekday=None, day_of_month=None, interval_days
         "day_of_month": day_of_month,
         "interval_days": interval_days,
         "reminder_time": reminder_time,
+        "assigned_to": assigned_to,
         "created_at": _now(),
     }])
     return chore_id
@@ -266,6 +269,28 @@ def get_chore(chore_id):
         if c["id"] == chore_id:
             return c
     return None
+
+
+def claim_chore(chore_id, person):
+    """Reassign a chore to `person`, carrying over all other current
+    fields unchanged (mirrors how delete_chore/create_chore write a full
+    row — the latest event's fields ARE the chore's current state)."""
+    chore = get_chore(chore_id)
+    if chore is None:
+        return
+    _append_rows("chore_events", [{
+        "id": uuid.uuid4().hex,
+        "chore_id": chore_id,
+        "event_type": "update",
+        "name": chore["name"],
+        "frequency": chore["frequency"],
+        "weekday": chore["weekday"],
+        "day_of_month": chore["day_of_month"],
+        "interval_days": chore["interval_days"],
+        "reminder_time": chore["reminder_time"],
+        "assigned_to": person,
+        "created_at": _now(),
+    }])
 
 
 def week_progress():

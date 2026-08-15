@@ -144,6 +144,7 @@ def create_chore():
         day_of_month=data.get("day_of_month") if frequency == "monthly" else None,
         interval_days=data.get("interval_days") if frequency == "interval" else None,
         reminder_time=data.get("reminder_time", "09:00"),
+        assigned_to=data.get("assigned_to") or "unassigned",
     )
     return jsonify({"id": chore_id}), 201
 
@@ -151,6 +152,16 @@ def create_chore():
 @app.route("/api/chores/<chore_id>", methods=["DELETE"])
 def delete_chore(chore_id):
     bq_store.delete_chore(chore_id)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/chores/<chore_id>/claim", methods=["POST"])
+def claim_chore(chore_id):
+    data = request.get_json(silent=True) or {}
+    person = (data.get("person") or "").strip()
+    if not person:
+        return jsonify({"error": "person is required"}), 400
+    bq_store.claim_chore(chore_id, person)
     return jsonify({"ok": True})
 
 

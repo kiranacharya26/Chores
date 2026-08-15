@@ -25,7 +25,14 @@ const intervalHint = document.getElementById("intervalHint");
 const personChip = document.getElementById("personChip");
 const personSheetOverlay = document.getElementById("personSheetOverlay");
 const personInput = document.getElementById("personInput");
+const partnerInput = document.getElementById("partnerInput");
 const savePersonBtn = document.getElementById("savePerson");
+
+const assigneeFilter = document.getElementById("assigneeFilter");
+const assignSegmented = document.getElementById("assignSegmented");
+const assignedToInput = document.getElementById("assignedTo");
+let currentFilter = "mine";
+let lastChores = [];
 
 const timeTrigger = document.getElementById("timeTrigger");
 const timeTriggerLabel = document.getElementById("timeTriggerLabel");
@@ -55,6 +62,8 @@ function closeSheet() {
   choreForm.reset();
   setFrequency("daily");
   setReminderTime("09:00");
+  [...assignSegmented.children].forEach((b) => b.classList.toggle("active", b.dataset.val === "me"));
+  assignedToInput.value = "";
 }
 fab.addEventListener("click", openSheet);
 cancelSheet.addEventListener("click", closeSheet);
@@ -86,12 +95,19 @@ function setPerson(name) {
   localStorage.setItem("chorePerson", name);
   renderPersonChip();
 }
+function getPartner() {
+  return localStorage.getItem("chorePartner") || "";
+}
+function setPartner(name) {
+  localStorage.setItem("chorePartner", name);
+}
 function renderPersonChip() {
   const name = getPerson();
   personChip.textContent = name ? name : "Who's this?";
 }
 function openPersonSheet() {
   personInput.value = getPerson();
+  partnerInput.value = getPartner();
   personSheetOverlay.classList.add("open");
   setTimeout(() => personInput.focus(), 250);
 }
@@ -104,11 +120,29 @@ personSheetOverlay.addEventListener("click", (e) => {
 });
 savePersonBtn.addEventListener("click", () => {
   const name = personInput.value.trim();
+  const partner = partnerInput.value.trim();
   if (name) setPerson(name);
+  if (partner) setPartner(partner);
   closePersonSheet();
 });
 renderPersonChip();
-if (!getPerson()) openPersonSheet();
+if (!getPerson() || !getPartner()) openPersonSheet();
+
+assigneeFilter.addEventListener("click", (e) => {
+  const btn = e.target.closest(".seg-btn");
+  if (!btn) return;
+  currentFilter = btn.dataset.val;
+  [...assigneeFilter.children].forEach((b) => b.classList.toggle("active", b === btn));
+  renderChoreList();
+});
+
+assignSegmented.addEventListener("click", (e) => {
+  const btn = e.target.closest(".seg-btn");
+  if (!btn) return;
+  [...assignSegmented.children].forEach((b) => b.classList.toggle("active", b === btn));
+  assignedToInput.value = btn.dataset.val === "me" ? getPerson()
+    : btn.dataset.val === "partner" ? getPartner() : "unassigned";
+});
 
 // ---------- Time wheel picker ----------
 
@@ -274,7 +308,14 @@ function buildChoreRow(chore) {
   const myName = getPerson();
   const doneByHtml = (chore.done_today && chore.done_by && chore.done_by !== myName)
     ? `<span class="done-by-badge">✓ ${chore.done_by}</span>` : "";
-  info.innerHTML = `<span class="name">${chore.name}</span><span class="meta">${metaText} · ${chore.reminder_time} ${streakHtml} ${overdueHtml} ${doneByHtml}</span>`;
+  const showAssignee = currentFilter === "all";
+  const isUnassigned = chore.assigned_to === "unassigned";
+  const assigneeHtml = showAssignee
+    ? isUnassigned
+      ? `<span class="assignee-tag unassigned">Unassigned</span>`
+      : `<span class="assignee-tag">${chore.assigned_to}</span>`
+    : "";
+  info.innerHTML = `<span class="name">${chore.name}</span><span class="meta">${metaText} · ${chore.reminder_time} ${streakHtml} ${overdueHtml} ${doneByHtml} ${assigneeHtml}</span>`;
 
   const delBtn = document.createElement("button");
   delBtn.className = "icon-btn";
@@ -287,6 +328,21 @@ function buildChoreRow(chore) {
 
   li.appendChild(check);
   li.appendChild(info);
+  if (showAssignee && isUnassigned) {
+    const claimBtn = document.createElement("button");
+    claimBtn.className = "claim-btn";
+    claimBtn.textContent = "Claim";
+    claimBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await fetch(`/api/chores/${chore.id}/claim`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ person: getPerson() }),
+      });
+      loadChores();
+    });
+    li.appendChild(claimBtn);
+  }
   li.appendChild(delBtn);
   wrap.appendChild(swipeBg);
   wrap.appendChild(li);
@@ -333,7 +389,16 @@ function attachSwipe(li, swipeBg, chore) {
 
 async function loadChores() {
   const res = await fetch("/api/chores");
-  const chores = await res.json();
+  lastChores = await res.json();
+  renderChoreList();
+}
+
+function renderChoreList() {
+  const chores = lastChores.filter((c) => {
+    if (currentFilter === "all") return true;
+    if (currentFilter === "mine") return c.assigned_to === getPerson();
+    return c.assigned_to === getPartner(); // "theirs"
+  });
   groupsEl.innerHTML = "";
   emptyState.style.display = chores.length === 0 ? "" : "none";
 
@@ -408,6 +473,7 @@ choreForm.addEventListener("submit", async (e) => {
   const frequency = frequencyInput.value;
   const reminder_time = reminderTimeInput.value || "09:00";
   const payload = { name, frequency, reminder_time };
+  payload.assigned_to = assignedToInput.value || getPerson();
   if (frequency === "weekly") payload.weekday = parseInt(weekdaySelect.value, 10);
   if (frequency === "monthly") payload.day_of_month = parseInt(dayOfMonthInput.value, 10) || 1;
   if (frequency === "interval") payload.interval_days = parseInt(intervalDaysInput.value, 10) || 3;
