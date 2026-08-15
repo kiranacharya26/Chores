@@ -1,0 +1,10 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'us-central1-docker.pkg.dev/chores-app-kiran/cloud-run-source-deploy/chores-app', '.']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'us-central1-docker.pkg.dev/chores-app-kiran/cloud-run-source-deploy/chores-app']
+  - name: 'gcr.io/google.com/cloudsdk/cloud-sdk'
+    entrypoint: gcloud
+    args: ['run', 'deploy', 'chores-app', '--image', 'us-central1-docker.pkg.dev/chores-app-kiran/cloud-run-source-deploy/chores-app', '--region', 'us-central1', '--platform', 'managed']
+images:
+  - 'us-central1-docker.pkg.dev/chores-app-kiran/cloud-run-source-deploy/chores-app'
