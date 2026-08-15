@@ -19,6 +19,13 @@ const freqSegmented = document.getElementById("freqSegmented");
 const frequencyInput = document.getElementById("frequency");
 const weekdaySelect = document.getElementById("weekday");
 const dayOfMonthInput = document.getElementById("dayOfMonth");
+const intervalDaysInput = document.getElementById("intervalDays");
+const intervalHint = document.getElementById("intervalHint");
+
+const personChip = document.getElementById("personChip");
+const personSheetOverlay = document.getElementById("personSheetOverlay");
+const personInput = document.getElementById("personInput");
+const savePersonBtn = document.getElementById("savePerson");
 
 const timeTrigger = document.getElementById("timeTrigger");
 const timeTriggerLabel = document.getElementById("timeTriggerLabel");
@@ -62,11 +69,46 @@ function setFrequency(freq) {
   });
   weekdaySelect.style.display = freq === "weekly" ? "" : "none";
   dayOfMonthInput.style.display = freq === "monthly" ? "" : "none";
+  intervalDaysInput.style.display = freq === "interval" ? "" : "none";
+  intervalHint.style.display = freq === "interval" ? "" : "none";
 }
 freqSegmented.addEventListener("click", (e) => {
   const btn = e.target.closest(".seg-btn");
   if (btn) setFrequency(btn.dataset.val);
 });
+
+// ---------- Who's using this device ----------
+
+function getPerson() {
+  return localStorage.getItem("chorePerson") || "";
+}
+function setPerson(name) {
+  localStorage.setItem("chorePerson", name);
+  renderPersonChip();
+}
+function renderPersonChip() {
+  const name = getPerson();
+  personChip.textContent = name ? name : "Who's this?";
+}
+function openPersonSheet() {
+  personInput.value = getPerson();
+  personSheetOverlay.classList.add("open");
+  setTimeout(() => personInput.focus(), 250);
+}
+function closePersonSheet() {
+  personSheetOverlay.classList.remove("open");
+}
+personChip.addEventListener("click", openPersonSheet);
+personSheetOverlay.addEventListener("click", (e) => {
+  if (e.target === personSheetOverlay) closePersonSheet();
+});
+savePersonBtn.addEventListener("click", () => {
+  const name = personInput.value.trim();
+  if (name) setPerson(name);
+  closePersonSheet();
+});
+renderPersonChip();
+if (!getPerson()) openPersonSheet();
 
 // ---------- Time wheel picker ----------
 
@@ -179,7 +221,12 @@ confirmTimeSheet.addEventListener("click", () => {
 
 async function toggleDone(chore) {
   const action = chore.done_today ? "undone" : "done";
-  await fetch(`/api/chores/${chore.id}/${action}`, { method: "POST" });
+  const body = action === "done" ? JSON.stringify({ person: getPerson() }) : undefined;
+  await fetch(`/api/chores/${chore.id}/${action}`, {
+    method: "POST",
+    headers: action === "done" ? { "Content-Type": "application/json" } : undefined,
+    body,
+  });
   loadChores();
   loadWeek();
 }
@@ -219,10 +266,15 @@ function buildChoreRow(chore) {
     ? "Daily"
     : chore.frequency === "weekly"
       ? `Weekly · ${WEEKDAY_NAMES[chore.weekday]}`
-      : `Monthly · day ${chore.day_of_month}`;
+      : chore.frequency === "monthly"
+        ? `Monthly · day ${chore.day_of_month}`
+        : `Every ${chore.interval_days}d`;
   const streakHtml = chore.streak > 0 ? `<span class="streak-badge">🔥${chore.streak}</span>` : "";
   const overdueHtml = overdue ? `<span class="overdue-badge">Overdue</span>` : "";
-  info.innerHTML = `<span class="name">${chore.name}</span><span class="meta">${metaText} · ${chore.reminder_time} ${streakHtml} ${overdueHtml}</span>`;
+  const myName = getPerson();
+  const doneByHtml = (chore.done_today && chore.done_by && chore.done_by !== myName)
+    ? `<span class="done-by-badge">✓ ${chore.done_by}</span>` : "";
+  info.innerHTML = `<span class="name">${chore.name}</span><span class="meta">${metaText} · ${chore.reminder_time} ${streakHtml} ${overdueHtml} ${doneByHtml}</span>`;
 
   const delBtn = document.createElement("button");
   delBtn.className = "icon-btn";
@@ -358,6 +410,7 @@ choreForm.addEventListener("submit", async (e) => {
   const payload = { name, frequency, reminder_time };
   if (frequency === "weekly") payload.weekday = parseInt(weekdaySelect.value, 10);
   if (frequency === "monthly") payload.day_of_month = parseInt(dayOfMonthInput.value, 10) || 1;
+  if (frequency === "interval") payload.interval_days = parseInt(intervalDaysInput.value, 10) || 3;
 
   const res = await fetch("/api/chores", {
     method: "POST",
@@ -394,10 +447,12 @@ async function setupPush() {
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
     });
+    const subJson = sub.toJSON();
+    subJson.person = getPerson();
     await fetch("/api/subscribe", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(sub.toJSON()),
+      body: JSON.stringify(subJson),
     });
     pushBanner.style.display = "none";
   });

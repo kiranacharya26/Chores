@@ -60,6 +60,7 @@ button { font-family: inherit; }
   letter-spacing: -0.03em;
 }
 .topbar .date { font-size: 0.85rem; color: var(--text-dim); font-weight: 500; }
+.topbar-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .topbar-stat {
   font-size: 0.78rem;
   font-weight: 700;
@@ -68,7 +69,17 @@ button { font-family: inherit; }
   padding: 6px 12px;
   border-radius: 999px;
   white-space: nowrap;
-  margin-top: 4px;
+}
+.person-chip {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 5px 11px;
+  border-radius: 999px;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
 /* ---------- Banner ---------- */
@@ -367,6 +378,8 @@ li.chore.overdue { border-color: rgba(245, 69, 92, 0.35); }
 }
 .name-field { font-weight: 600; }
 .field-label { font-size: 0.78rem; color: var(--text-dim); font-weight: 600; margin: 4px 0 -4px; }
+.field-hint { font-size: 0.78rem; color: var(--text-faint); line-height: 1.4; margin: -2px 0 2px; }
+.done-by-badge { color: var(--accent); font-weight: 600; }
 
 .time-trigger {
   display: flex;
@@ -391,12 +404,13 @@ li.chore.overdue { border-color: rgba(245, 69, 92, 0.35); }
   background: none;
   border: none;
   color: var(--text-dim);
-  padding: 10px 0;
+  padding: 10px 2px;
   border-radius: 8px;
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
 }
 .seg-btn.active { background: var(--accent); color: white; }
 

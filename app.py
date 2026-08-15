@@ -142,6 +142,7 @@ def create_chore():
         frequency=frequency,
         weekday=data.get("weekday") if frequency == "weekly" else None,
         day_of_month=data.get("day_of_month") if frequency == "monthly" else None,
+        interval_days=data.get("interval_days") if frequency == "interval" else None,
         reminder_time=data.get("reminder_time", "09:00"),
     )
     return jsonify({"id": chore_id}), 201
@@ -155,7 +156,19 @@ def delete_chore(chore_id):
 
 @app.route("/api/chores/<chore_id>/done", methods=["POST"])
 def mark_done(chore_id):
-    bq_store.mark_done(chore_id, on=True)
+    data = request.get_json(silent=True) or {}
+    person = (data.get("person") or "").strip() or None
+    bq_store.mark_done(chore_id, on=True, person=person)
+
+    if person:
+        chore = bq_store.get_chore(chore_id)
+        others = [s for s in bq_store.list_active_subscriptions() if s["person"] and s["person"] != person]
+        for sub in others:
+            send_push(
+                sub["endpoint"], sub["subscription_json"],
+                "Already done ✓", f"{person} did: {chore['name'] if chore else 'a chore'}",
+            )
+
     return jsonify({"ok": True})
 
 
@@ -190,9 +203,10 @@ def cron_check_reminders():
 def subscribe():
     sub_data = request.get_json(force=True)
     endpoint = sub_data.get("endpoint")
+    person = sub_data.pop("person", None)
     if not endpoint:
         return jsonify({"error": "invalid subscription"}), 400
-    bq_store.add_subscription(endpoint, json.dumps(sub_data))
+    bq_store.add_subscription(endpoint, json.dumps(sub_data), person=person)
     return jsonify({"ok": True})
 
 

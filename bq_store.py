@@ -36,15 +36,16 @@ TABLE_SCHEMAS = {
     "chore_events": {
         "id": "STRING", "chore_id": "STRING", "event_type": "STRING",
         "name": "STRING", "frequency": "STRING", "weekday": "INT64",
-        "day_of_month": "INT64", "reminder_time": "STRING", "created_at": "TIMESTAMP",
+        "day_of_month": "INT64", "interval_days": "INT64",
+        "reminder_time": "STRING", "created_at": "TIMESTAMP",
     },
     "completion_events": {
         "id": "STRING", "chore_id": "STRING", "event_type": "STRING",
-        "event_date": "STRING", "created_at": "TIMESTAMP",
+        "event_date": "STRING", "person": "STRING", "created_at": "TIMESTAMP",
     },
     "subscription_events": {
         "id": "STRING", "endpoint": "STRING", "event_type": "STRING",
-        "subscription_json": "STRING", "created_at": "TIMESTAMP",
+        "subscription_json": "STRING", "person": "STRING", "created_at": "TIMESTAMP",
     },
     "reminder_events": {
         "id": "STRING", "chore_id": "STRING", "reminded_date": "STRING",
@@ -78,11 +79,17 @@ def _now():
     return datetime.now(timezone.utc)
 
 
-FREQUENCIES = ["daily", "weekly", "monthly"]
+FREQUENCIES = ["daily", "weekly", "monthly", "interval"]
 WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
-def _is_due_today(chore, today: date) -> bool:
+def _last_done_before(done_dates: set, before: date):
+    """Most recent done date strictly before `before`, or None."""
+    candidates = [datetime.strptime(d, "%Y-%m-%d").date() for d in done_dates if d < before.isoformat()]
+    return max(candidates) if candidates else None
+
+
+def _is_due_today(chore, today: date, done_dates: set = frozenset()) -> bool:
     freq = chore["frequency"]
     if freq == "daily":
         return True
@@ -90,6 +97,15 @@ def _is_due_today(chore, today: date) -> bool:
         return chore["weekday"] == today.weekday()
     if freq == "monthly":
         return chore["day_of_month"] == today.day
+    if freq == "interval":
+        # Due once interval_days have passed since the last completion —
+        # a moving target based on actual behavior, not a fixed calendar
+        # slot. Fixes the "everything shows overdue, you stop trusting the
+        # badges" failure mode of rigid schedules.
+        last_done = _last_done_before(done_dates, today + timedelta(days=1))
+        if last_done is None:
+            return True
+        return (today - last_done).days >= chore["interval_days"]
     return False
 
 
@@ -108,6 +124,9 @@ def _previous_due_date(chore, from_date: date) -> date:
 
 
 def _compute_streak(chore, done_dates: set, today: date) -> int:
+    if chore["frequency"] == "interval":
+        return _compute_interval_streak(chore, done_dates)
+
     pointer = today if _is_due_today(chore, today) else _previous_due_date(chore, today + timedelta(days=1))
     if pointer == today and today.isoformat() not in done_dates:
         pointer = _previous_due_date(chore, today)
@@ -121,6 +140,24 @@ def _compute_streak(chore, done_dates: set, today: date) -> int:
     return streak
 
 
+def _compute_interval_streak(chore, done_dates: set) -> int:
+    """Consecutive completions each landing within interval_days of the
+    previous one (a little slack for the day it's done on)."""
+    dates_sorted = sorted(
+        (datetime.strptime(d, "%Y-%m-%d").date() for d in done_dates), reverse=True
+    )
+    if not dates_sorted:
+        return 0
+    streak = 1
+    for i in range(len(dates_sorted) - 1):
+        gap = (dates_sorted[i] - dates_sorted[i + 1]).days
+        if gap <= chore["interval_days"] + 1:
+            streak += 1
+        else:
+            break
+    return streak
+
+
 def _latest_chores():
     """Current chore state: latest event per chore_id, excluding deleted."""
     query = f"""
@@ -128,7 +165,7 @@ def _latest_chores():
           SELECT *, ROW_NUMBER() OVER (PARTITION BY chore_id ORDER BY created_at DESC) rn
           FROM `{_table('chore_events')}`
         )
-        SELECT chore_id, name, frequency, weekday, day_of_month, reminder_time
+        SELECT chore_id, name, frequency, weekday, day_of_month, interval_days, reminder_time
         FROM ranked
         WHERE rn = 1 AND event_type != 'delete'
         ORDER BY created_at ASC
@@ -137,7 +174,8 @@ def _latest_chores():
 
 
 def _done_dates_by_chore():
-    """For every chore, the set of dates whose latest event that day is 'done'."""
+    """For every chore: {date -> person who did it}, for dates whose latest
+    event that day is 'done'."""
     query = f"""
         WITH ranked AS (
           SELECT *, ROW_NUMBER() OVER (
@@ -145,13 +183,13 @@ def _done_dates_by_chore():
           ) rn
           FROM `{_table('completion_events')}`
         )
-        SELECT chore_id, event_date
+        SELECT chore_id, event_date, person
         FROM ranked
         WHERE rn = 1 AND event_type = 'done'
     """
     result = {}
     for row in _get_client().query(query).result():
-        result.setdefault(row["chore_id"], set()).add(row["event_date"])
+        result.setdefault(row["chore_id"], {})[row["event_date"]] = row["person"]
     return result
 
 
@@ -162,22 +200,25 @@ def list_chores():
 
     out = []
     for c in chores:
-        done_dates = done_map.get(c["chore_id"], set())
+        done_by_date = done_map.get(c["chore_id"], {})
+        done_dates = set(done_by_date.keys())
         out.append({
             "id": c["chore_id"],
             "name": c["name"],
             "frequency": c["frequency"],
             "weekday": c["weekday"],
             "day_of_month": c["day_of_month"],
+            "interval_days": c["interval_days"],
             "reminder_time": c["reminder_time"],
             "done_today": today.isoformat() in done_dates,
-            "due_today": _is_due_today(c, today),
+            "done_by": done_by_date.get(today.isoformat()),
+            "due_today": _is_due_today(c, today, done_dates),
             "streak": _compute_streak(c, done_dates, today),
         })
     return out
 
 
-def create_chore(name, frequency, weekday=None, day_of_month=None, reminder_time="09:00"):
+def create_chore(name, frequency, weekday=None, day_of_month=None, interval_days=None, reminder_time="09:00"):
     chore_id = uuid.uuid4().hex
     _append_rows("chore_events", [{
         "id": uuid.uuid4().hex,
@@ -187,6 +228,7 @@ def create_chore(name, frequency, weekday=None, day_of_month=None, reminder_time
         "frequency": frequency,
         "weekday": weekday,
         "day_of_month": day_of_month,
+        "interval_days": interval_days,
         "reminder_time": reminder_time,
         "created_at": _now(),
     }])
@@ -202,19 +244,28 @@ def delete_chore(chore_id):
         "frequency": None,
         "weekday": None,
         "day_of_month": None,
+        "interval_days": None,
         "reminder_time": None,
         "created_at": _now(),
     }])
 
 
-def mark_done(chore_id, on: bool):
+def mark_done(chore_id, on: bool, person=None):
     _append_rows("completion_events", [{
         "id": uuid.uuid4().hex,
         "chore_id": chore_id,
         "event_type": "done" if on else "undone",
         "event_date": date.today().isoformat(),
+        "person": person if on else None,
         "created_at": _now(),
     }])
+
+
+def get_chore(chore_id):
+    for c in list_chores():
+        if c["id"] == chore_id:
+            return c
+    return None
 
 
 def week_progress():
@@ -230,9 +281,10 @@ def week_progress():
         total = 0
         done = 0
         for c in chores:
-            if _is_due_today(c, d):
+            done_dates = set(done_map.get(c["chore_id"], {}).keys())
+            if _is_due_today(c, d, done_dates):
                 total += 1
-                if d.isoformat() in done_map.get(c["chore_id"], set()):
+                if d.isoformat() in done_dates:
                     done += 1
         result.append({
             "date": d.isoformat(),
@@ -303,7 +355,7 @@ def _active_subscriptions():
           SELECT *, ROW_NUMBER() OVER (PARTITION BY endpoint ORDER BY created_at DESC) rn
           FROM `{_table('subscription_events')}`
         )
-        SELECT endpoint, subscription_json
+        SELECT endpoint, subscription_json, person
         FROM ranked
         WHERE rn = 1 AND event_type = 'active'
     """
@@ -314,12 +366,13 @@ def list_active_subscriptions():
     return _active_subscriptions()
 
 
-def add_subscription(endpoint, subscription_json):
+def add_subscription(endpoint, subscription_json, person=None):
     _append_rows("subscription_events", [{
         "id": uuid.uuid4().hex,
         "endpoint": endpoint,
         "event_type": "active",
         "subscription_json": subscription_json,
+        "person": person,
         "created_at": _now(),
     }])
 

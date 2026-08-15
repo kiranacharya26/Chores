@@ -21,7 +21,10 @@
     <h1>Chores</h1>
     <span class="date" id="todayLabel"></span>
   </div>
-  <div class="topbar-stat" id="todayStat"></div>
+  <div class="topbar-right">
+    <div class="topbar-stat" id="todayStat"></div>
+    <button id="personChip" class="person-chip" type="button"></button>
+  </div>
 </header>
 
 <div id="pushBanner" class="banner" style="display:none;">
@@ -62,6 +65,7 @@
         <button type="button" class="seg-btn active" data-val="daily">Daily</button>
         <button type="button" class="seg-btn" data-val="weekly">Weekly</button>
         <button type="button" class="seg-btn" data-val="monthly">Monthly</button>
+        <button type="button" class="seg-btn" data-val="interval">Custom</button>
       </div>
       <input type="hidden" id="frequency" value="daily">
 
@@ -69,6 +73,8 @@
         {% for wd in weekdays %}<option value="{{ loop.index0 }}">{{ wd }}</option>{% endfor %}
       </select>
       <input type="number" id="dayOfMonth" class="field" min="1" max="31" placeholder="Day of month (1-31)" style="display:none;">
+      <input type="number" id="intervalDays" class="field" min="1" max="365" placeholder="Every how many days?" style="display:none;">
+      <p class="field-hint" id="intervalHint" style="display:none;">Due date shifts based on when you last did it — not a fixed calendar day.</p>
 
       <label class="field-label">Reminder time</label>
       <button type="button" id="timeTrigger" class="field time-trigger">
@@ -99,6 +105,18 @@
     <div class="sheet-actions">
       <button type="button" id="cancelTimeSheet" class="btn-secondary">Cancel</button>
       <button type="button" id="confirmTimeSheet" class="btn-primary">Set time</button>
+    </div>
+  </div>
+</div>
+
+<div id="personSheetOverlay" class="sheet-overlay">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <h2>Who's this?</h2>
+    <p class="field-hint">So chores can show who did what, and notify others when something's already done.</p>
+    <input type="text" id="personInput" class="field name-field" placeholder="Your name" autocomplete="off">
+    <div class="sheet-actions">
+      <button type="button" id="savePerson" class="btn-primary" style="flex:1;">Save</button>
     </div>
   </div>
 </div>
