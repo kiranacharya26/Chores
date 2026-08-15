@@ -1,19 +1,13 @@
 """
 BigQuery-backed data layer for the Chores app.
 
-Follows the same pattern as finstatement: BigQuery's free tier blocks DML
-(UPDATE/DELETE/INSERT statements) without a billing account, but load jobs
-(WRITE_APPEND) are allowed. So every write here — create, done, undone,
-delete — is an appended *event*, never a mutation. Current state is derived
-by taking the latest event per row.
-
-Trade-off: each write is a BigQuery load job, which takes a few seconds to
-land (unlike a normal instant DB write). Once billing is enabled on the GCP
-project, this can be swapped for plain INSERT/UPDATE/DELETE for instant
-writes — the query functions below would simplify a lot.
+Data model is still an event log (every write is an appended event; current
+state is derived by taking the latest event per row) — that part is kept
+because it's a clean way to compute streaks/history. But writes now go
+through plain parameterized INSERT statements instead of load jobs, since
+billing is enabled on the project and DML is allowed. INSERT via query()
+lands in well under a second, vs. several seconds for a load job.
 """
-import io
-import json
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
@@ -38,20 +32,50 @@ def _table(name):
     return f"{PROJECT_ID}.{DATASET}.{name}"
 
 
+TABLE_SCHEMAS = {
+    "chore_events": {
+        "id": "STRING", "chore_id": "STRING", "event_type": "STRING",
+        "name": "STRING", "frequency": "STRING", "weekday": "INT64",
+        "day_of_month": "INT64", "reminder_time": "STRING", "created_at": "TIMESTAMP",
+    },
+    "completion_events": {
+        "id": "STRING", "chore_id": "STRING", "event_type": "STRING",
+        "event_date": "STRING", "created_at": "TIMESTAMP",
+    },
+    "subscription_events": {
+        "id": "STRING", "endpoint": "STRING", "event_type": "STRING",
+        "subscription_json": "STRING", "created_at": "TIMESTAMP",
+    },
+    "reminder_events": {
+        "id": "STRING", "chore_id": "STRING", "reminded_date": "STRING",
+        "snoozed_until": "TIMESTAMP", "created_at": "TIMESTAMP",
+    },
+}
+
+
 def _append_rows(table_name, rows):
-    """Append rows via a load job (allowed without billing, unlike DML)."""
-    buf = io.StringIO("\n".join(json.dumps(r) for r in rows))
-    job_config = bigquery.LoadJobConfig(
-        source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
-        write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
-        autodetect=False,
-    )
-    job = _get_client().load_table_from_file(buf, _table(table_name), job_config=job_config)
-    job.result()
+    """Insert rows via a plain parameterized INSERT (instant, needs billing enabled)."""
+    if not rows:
+        return
+    schema = TABLE_SCHEMAS[table_name]
+    columns = list(schema.keys())
+    value_groups = []
+    params = []
+    for i, row in enumerate(rows):
+        placeholders = []
+        for col in columns:
+            pname = f"{col}_{i}"
+            placeholders.append(f"@{pname}")
+            params.append(bigquery.ScalarQueryParameter(pname, schema[col], row.get(col)))
+        value_groups.append("(" + ", ".join(placeholders) + ")")
+
+    query = f"INSERT INTO `{_table(table_name)}` ({', '.join(columns)}) VALUES {', '.join(value_groups)}"
+    job_config = bigquery.QueryJobConfig(query_parameters=params)
+    _get_client().query(query, job_config=job_config).result()
 
 
-def _now_iso():
-    return datetime.now(timezone.utc).isoformat()
+def _now():
+    return datetime.now(timezone.utc)
 
 
 FREQUENCIES = ["daily", "weekly", "monthly"]
@@ -164,7 +188,7 @@ def create_chore(name, frequency, weekday=None, day_of_month=None, reminder_time
         "weekday": weekday,
         "day_of_month": day_of_month,
         "reminder_time": reminder_time,
-        "created_at": _now_iso(),
+        "created_at": _now(),
     }])
     return chore_id
 
@@ -179,7 +203,7 @@ def delete_chore(chore_id):
         "weekday": None,
         "day_of_month": None,
         "reminder_time": None,
-        "created_at": _now_iso(),
+        "created_at": _now(),
     }])
 
 
@@ -189,7 +213,7 @@ def mark_done(chore_id, on: bool):
         "chore_id": chore_id,
         "event_type": "done" if on else "undone",
         "event_date": date.today().isoformat(),
-        "created_at": _now_iso(),
+        "created_at": _now(),
     }])
 
 
@@ -258,7 +282,7 @@ def mark_reminded(chore_id):
         "chore_id": chore_id,
         "reminded_date": date.today().isoformat(),
         "snoozed_until": None,
-        "created_at": _now_iso(),
+        "created_at": _now(),
     }])
 
 
@@ -268,8 +292,8 @@ def snooze_chore(chore_id, minutes):
         "id": uuid.uuid4().hex,
         "chore_id": chore_id,
         "reminded_date": date.today().isoformat(),
-        "snoozed_until": snoozed_until.isoformat(),
-        "created_at": _now_iso(),
+        "snoozed_until": snoozed_until,
+        "created_at": _now(),
     }])
 
 
@@ -296,7 +320,7 @@ def add_subscription(endpoint, subscription_json):
         "endpoint": endpoint,
         "event_type": "active",
         "subscription_json": subscription_json,
-        "created_at": _now_iso(),
+        "created_at": _now(),
     }])
 
 
@@ -306,5 +330,5 @@ def revoke_subscription(endpoint):
         "endpoint": endpoint,
         "event_type": "revoked",
         "subscription_json": None,
-        "created_at": _now_iso(),
+        "created_at": _now(),
     }])
