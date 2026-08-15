@@ -91,9 +91,17 @@ def check_and_send_reminders():
         bq_store.mark_reminded(chore["id"])
 
 
-scheduler = BackgroundScheduler()
-scheduler.add_job(check_and_send_reminders, "interval", minutes=1, id="reminder_check")
-scheduler.start()
+# Cloud Run scales the container to zero when idle, which would silently kill
+# an in-process scheduler — there's no guarantee the process stays alive
+# between requests. So on Cloud Run, reminders are driven externally by Cloud
+# Scheduler hitting /api/cron/check-reminders instead. Render (and local dev)
+# keep the simpler in-process APScheduler.
+if os.environ.get("RUN_INTERNAL_SCHEDULER", "1") == "1":
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(check_and_send_reminders, "interval", minutes=1, id="reminder_check")
+    scheduler.start()
+
+CRON_SECRET = os.environ.get("CRON_SECRET")
 
 
 def _asset_version():
@@ -168,6 +176,14 @@ def snooze_chore(chore_id):
 @app.route("/api/week", methods=["GET"])
 def week():
     return jsonify(bq_store.week_progress())
+
+
+@app.route("/api/cron/check-reminders", methods=["POST"])
+def cron_check_reminders():
+    if CRON_SECRET and request.headers.get("X-Cron-Secret") != CRON_SECRET:
+        return jsonify({"error": "unauthorized"}), 401
+    check_and_send_reminders()
+    return jsonify({"ok": True})
 
 
 @app.route("/api/subscribe", methods=["POST"])

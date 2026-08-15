@@ -1,0 +1,9 @@
+venv/
+__pycache__/
+*.pyc
+.git/
+.DS_Store
+*.db
+bq-service-account.json
+vapid_private.pem
+vapid_public_key.txt
