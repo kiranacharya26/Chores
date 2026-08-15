@@ -126,7 +126,7 @@ savePersonBtn.addEventListener("click", () => {
   closePersonSheet();
 });
 renderPersonChip();
-if (!getPerson() || !getPartner()) openPersonSheet();
+if (!getPerson()) openPersonSheet();
 
 assigneeFilter.addEventListener("click", (e) => {
   const btn = e.target.closest(".seg-btn");
